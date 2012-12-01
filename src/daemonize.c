@@ -43,6 +43,48 @@ static int closedesc_all(const int closestdin)
     return 0;
 }
 
+static int create_pid_file(void)
+{
+	FILE *pid_stream;
+	pid_t pid;
+	int p;
+
+	if (pid_file==0)
+		return 0;
+
+	p = -1;
+
+	if ((pid_stream=fopen(pid_file, "r"))!=NULL){
+		if (fscanf(pid_stream, "%d", &p) < 0) {
+			logfile(LOG_WARNING, "could not parse pid file %s\n", pid_file);
+		}
+		fclose(pid_stream);
+		if (p==-1){
+			logfile(LOG_ERR, "pid file %s exists, but doesn't contain a valid"
+					" pid number\n", pid_file);
+			return -1;
+		}
+		if (kill((pid_t)p, 0)==0 || errno==EPERM){
+			logfile(LOG_ERR, "running process found in the pid file %s\n",
+					pid_file);
+				return -1;
+		} else {
+			logfile(LOG_WARNING, "pid file contains old pid, replacing pid\n");
+		}
+	}
+
+	pid=getpid();
+	if ((pid_stream=fopen(pid_file, "w"))==NULL){
+		logfile(LOG_ERR, "unable to create pid file %s: %s\n",
+				pid_file, strerror(errno));
+		return -1;
+	} else {
+		fprintf(pid_stream, "%i\n", (int)pid);
+		fclose(pid_stream);
+	}
+	return 0;
+}
+
 void dodaemonize(void)
 { 
     pid_t child;
@@ -86,5 +128,9 @@ void dodaemonize(void)
             _exit(EXIT_FAILURE);
         }
     }
+
+	if(create_pid_file()<0) {
+           _exit(EXIT_FAILURE);
+	}
 }
 

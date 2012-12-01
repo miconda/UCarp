@@ -45,6 +45,7 @@ static void usage(void)
         "--xparam=<value> (-x): extra parameter to send to up/down scripts\n"       
 		"--udpu=address (-U <address>): target address for unicast UDP encapsulation\n\t (address can be: ip or ip:port)\n"
 		"--loglevel=level (-U <loglevel>): threshold for printing log messages\n\t (default INFO, can be: DEBUG, INFO, NOTICE, WARNING, ERR)\n"
+        "--pidfile=<path> (-W): write process ID in a file\n"
         "\n"
         "Sample usage:\n"
         "\n"
@@ -294,6 +295,12 @@ int main(int argc, char *argv[])
 			logfile(LOG_INFO, _("Using UDP unicast [%s:%u]"),
 					udpu_addr, udpu_port);
             break;            
+        }
+        case 'W': {
+            if ((pid_file = strdup(optarg)) == NULL) {
+                die_mem();
+            }
+            break;
         }
         default: {
             usage();

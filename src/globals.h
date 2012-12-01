@@ -36,4 +36,5 @@ GLOBAL(unsigned char inaddr_carp_group[4], { 224 _COMA_ 0 _COMA_ 0 _COMA_ 18 });
 GLOBAL0(sig_atomic_t received_signal);
 GLOBAL(char *udpu_addr, NULL);
 GLOBAL(unsigned int udpu_port, 112);
+GLOBAL(char *pid_file, NULL);
 #endif

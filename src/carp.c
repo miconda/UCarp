@@ -706,6 +706,10 @@ static RETSIGTYPE sighandler_exit(const int sig)
     if (sc.sc_state != BACKUP) {
         (void) spawn_handler(dev_desc_fd, downscript);
     }
+
+	if (pid_file != NULL)
+		unlink(pid_file);
+
     _exit(EXIT_SUCCESS);
 }
 
