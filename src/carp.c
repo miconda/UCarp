@@ -281,7 +281,12 @@ static void carp_send_ad(struct carp_softc *sc)
     ip_ptr[offsetof(struct ip, ip_sum) + 1] = sum & 0xff;
 
     do {
-        rc = write(dev_desc_fd, pkt, eth_len);
+		if(udpu_addr==NULL) {
+			rc = write(dev_desc_fd, pkt, eth_len);
+		} else {
+			rc = sendto(udpu_fd, pkt, eth_len, 0,
+					(struct sockaddr *)&udpu_dest, sizeof(udpu_dest));
+		}
     } while (rc < 0 && errno == EINTR);
     if (rc < 0) {
         logfile(LOG_WARNING, _("write() has failed: %s"), strerror(errno));
@@ -652,6 +657,45 @@ static void packethandler(unsigned char *dummy,
     }
 }     
 
+static void udpu_dispatch(void)
+{
+	struct pcap_pkthdr header;
+	unsigned char udpu_buf[1500];
+	struct sockaddr_in peeraddr;
+	unsigned int peeraddr_len = sizeof(peeraddr);
+	int rc;
+
+	rc = recvfrom(udpu_fd, udpu_buf, sizeof(udpu_buf), 0,
+                    (struct sockaddr *)&peeraddr,
+                    &peeraddr_len);
+	if (rc < 0)
+	{
+		logfile(LOG_WARNING, "recvfrom() failed [%d]", rc);
+		return;
+	}
+
+	logfile(LOG_DEBUG, "received frame size: <%d>\n", rc);
+	logfile(LOG_DEBUG, "from address %s and port %d\n",
+             inet_ntoa(peeraddr.sin_addr),
+             ntohs(peeraddr.sin_port));
+	/* todo: should check srcip and port although we have secret passwd */
+
+	memset(&header, 0, sizeof(struct pcap_pkthdr));
+	header.caplen = rc;
+	header.len = rc;
+#if 0
+	/* timestamp seems to be unused */
+	if (gettimeofday(&header.ts, NULL) != 0) {
+        logfile(LOG_WARNING, _("gettimeofday() for udpu failed: %s"),
+                        strerror(errno));
+        return;
+    }
+#endif
+	packethandler(NULL, &header, udpu_buf);
+}
+
+
+
 static RETSIGTYPE sighandler_exit(const int sig)
 {
     (void) sig;
@@ -686,7 +730,16 @@ static char *build_bpf_rule(void)
         logfile(LOG_ERR, "inet_ntoa: [%s]", strerror(errno));
         return NULL;
     }
-    snprintf(rule, sizeof rule, "proto %u and src host not %s",
+
+#if 0
+	/* use a pcap fitering rule that is very unlikely to match ?!? */
+	if(udpu_addr==NULL)
+		snprintf(rule, sizeof rule, "proto %u and src port 9 and src port 10",
+             (unsigned int) IPPROTO_CARP);
+	else
+#endif
+
+	snprintf(rule, sizeof rule, "proto %u and src host not %s",
              (unsigned int) IPPROTO_CARP, srcip_s);
 #ifdef DEBUG
     logfile(LOG_DEBUG, "BPF rule: [%s]", rule);
@@ -707,6 +760,7 @@ int docarp(void)
     int iface_running = 1;
     int poll_sleep_time;
     struct timeval time_until_advert;
+	struct sockaddr_in udpu_orig;
 
     sc.sc_vhid = vhid;
     sc.sc_advbase = advbase;
@@ -751,14 +805,16 @@ int docarp(void)
     }    
     if (pcap_compile(dev_desc, &bpfp, build_bpf_rule(),
                      1, (bpf_u_int32) 0) != 0) {
-        logfile(LOG_ERR, _("Unable to compile pcap rule: %s [%s]"),
-                errbuf, interface == NULL ? "-" : interface);
+        logfile(LOG_ERR, _("Unable to compile pcap rule: %s [%s] (%s)"),
+                errbuf, interface == NULL ? "-" : interface,
+				pcap_geterr(dev_desc));
         return -1;
     }
     pcap_setfilter(dev_desc, &bpfp);
     dev_desc_fd = pcap_fileno(dev_desc);
     pfds[0].fd = dev_desc_fd;
     pfds[0].events = POLLIN | POLLERR | POLLHUP;
+	pfds[0].revents = 0;
     
     if (shutdown_at_exit != 0) {
         (void) signal(SIGINT, sighandler_exit);
@@ -792,6 +848,38 @@ int docarp(void)
             return -1;
         }
     }
+	if(udpu_addr!=NULL) {
+		/* socket for udpu communication */
+		if ((udpu_fd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) {
+			logfile(LOG_ERR, _("Error opening socket for udpu on [%s]: %s"),
+               interface == NULL ? "-" : interface, strerror(errno));
+			return -1;
+		}
+
+		/* bind to local interface and port */
+		memset(&udpu_orig, 0, sizeof(struct sockaddr_in));
+		udpu_orig.sin_family = AF_INET;
+		udpu_orig.sin_addr.s_addr = inet_addr(srcip_str);
+		udpu_orig.sin_port = htons(udpu_port);
+		if (bind(udpu_fd, (struct sockaddr *)&udpu_orig,
+								sizeof(struct sockaddr_in)) == -1)
+		{
+			logfile(LOG_ERR,
+				"Can't do bind to local socket (%s:%u) [errno=%s (%d)]",
+					srcip_str, udpu_port,
+                    strerror(errno), errno);
+			close(udpu_fd);
+			return -1;
+		}
+		/* build udpu destination address */
+		memset(&udpu_dest, 0, sizeof(struct sockaddr_in));
+		udpu_dest.sin_family = AF_INET;
+		udpu_dest.sin_addr.s_addr = inet_addr(udpu_addr);
+		udpu_dest.sin_port = htons(udpu_port);
+
+		/* poll switched to listen on this socket */
+		pfds[0].fd = udpu_fd;
+	}
 #ifdef SIOCGIFFLAGS    
     if (strlen(interface) >= sizeof iface.ifr_name) {
         logfile(LOG_ERR, _("Interface name too long"));
@@ -881,7 +969,10 @@ int docarp(void)
             continue;
         }        
         if (nfds == 1) {
-            pcap_dispatch(dev_desc, 1, packethandler, NULL);
+			if(udpu_addr==NULL)
+			   pcap_dispatch(dev_desc, 1, packethandler, NULL);
+			else
+				udpu_dispatch();
         }
         if (sc.sc_md_tmo.tv_sec != 0 && timercmp(&now, &sc.sc_md_tmo, >)) {
             carp_master_down(&sc);

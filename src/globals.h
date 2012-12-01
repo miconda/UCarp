@@ -11,6 +11,7 @@
 
 GLOBAL0(char *interface);
 GLOBAL0(struct in_addr srcip);
+GLOBAL0(char *srcip_str);
 GLOBAL0(unsigned char vhid);
 GLOBAL0(char *pass);
 GLOBAL0(struct in_addr vaddr);
@@ -32,4 +33,6 @@ GLOBAL0(char *vaddr_arg);
 GLOBAL0(char *xparam);
 GLOBAL(unsigned char inaddr_carp_group[4], { 224 _COMA_ 0 _COMA_ 0 _COMA_ 18 });
 GLOBAL0(sig_atomic_t received_signal);
+GLOBAL(char *udpu_addr, NULL);
+GLOBAL(unsigned int udpu_port, 112);
 #endif
