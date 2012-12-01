@@ -710,6 +710,9 @@ static RETSIGTYPE sighandler_exit(const int sig)
 	if (pid_file != NULL)
 		unlink(pid_file);
 
+	if (state_file != NULL)
+		unlink(state_file);
+
     _exit(EXIT_SUCCESS);
 }
 
@@ -863,14 +866,14 @@ int docarp(void)
 		/* bind to local interface and port */
 		memset(&udpu_orig, 0, sizeof(struct sockaddr_in));
 		udpu_orig.sin_family = AF_INET;
-		udpu_orig.sin_addr.s_addr = inet_addr(srcip_str);
+		udpu_orig.sin_addr.s_addr = inet_addr(srcip_arg);
 		udpu_orig.sin_port = htons(udpu_port);
 		if (bind(udpu_fd, (struct sockaddr *)&udpu_orig,
 								sizeof(struct sockaddr_in)) == -1)
 		{
 			logfile(LOG_ERR,
 				"Can't do bind to local socket (%s:%u) [errno=%s (%d)]",
-					srcip_str, udpu_port,
+					srcip_arg, udpu_port,
                     strerror(errno), errno);
 			close(udpu_fd);
 			return -1;
