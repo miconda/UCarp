@@ -43,7 +43,8 @@ static void usage(void)
         "--nomcast (-M): use broadcast (instead of multicast) advertisements\n"
         "--facility=<facility> (-f): set syslog facility (default=daemon)\n"
         "--xparam=<value> (-x): extra parameter to send to up/down scripts\n"       
-		"--udpu=address (-U <address>): target address for unicast UDP encapsulation (ip or ip:port)\n"
+		"--udpu=address (-U <address>): target address for unicast UDP encapsulation\n\t (address can be: ip or ip:port)\n"
+		"--loglevel=level (-U <loglevel>): threshold for printing log messages\n\t (default INFO, can be: DEBUG, INFO, NOTICE, WARNING, ERR)\n"
         "\n"
         "Sample usage:\n"
         "\n"
@@ -231,6 +232,29 @@ int main(int argc, char *argv[])
             }
             break;
         }
+		case 'L': {
+            if (strcasecmp(optarg, "ERR") == 0) {
+                syslog_level = LOG_ERR;
+                break;
+            }
+            if (strcasecmp(optarg, "WARNING") == 0) {
+                syslog_level = LOG_WARNING;
+                break;
+            }
+            if (strcasecmp(optarg, "NOTICE") == 0) {
+                syslog_level = LOG_NOTICE;
+                break;
+            }
+            if (strcasecmp(optarg, "INFO") == 0) {
+                syslog_level = LOG_INFO;
+                break;
+            }
+            if (strcasecmp(optarg, "DEBUG") == 0) {
+                syslog_level = LOG_DEBUG;
+                break;
+            }
+            logfile(LOG_ERR, _("Unknown log level: [%s]"), optarg);
+		}
         case 'x': {
             free(xparam);
             if ((xparam = strdup(optarg)) == NULL) {

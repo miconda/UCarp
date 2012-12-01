@@ -29,6 +29,7 @@ GLOBAL0(signed char daemonize);
 GLOBAL0(signed char ignoreifstate);
 GLOBAL0(signed char no_mcast);
 GLOBAL(int syslog_facility, DEFAULT_FACILITY);
+GLOBAL(int syslog_level, LOG_INFO);
 GLOBAL0(char *vaddr_arg);
 GLOBAL0(char *xparam);
 GLOBAL(unsigned char inaddr_carp_group[4], { 224 _COMA_ 0 _COMA_ 0 _COMA_ 18 });

@@ -12,6 +12,9 @@ void logfile(const int crit, const char *format, ...)
     va_list va;
     char line[MAX_SYSLOG_LINE];
     
+	if(crit>syslog_level)
+		return;
+
     va_start(va, format);
     vsnprintf(line, sizeof line, format, va);
     switch (crit) {
