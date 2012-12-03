@@ -1,0 +1,15 @@
+# ignore binary files and objects
+ucarp
+*.so
+*.so.*
+*.o
+# archives
+*.tar.gz
+*.deb
+*.rpm
+# tags
+tags
+TAGS
+# vi swaps
+.*.swp
+.*.swo
