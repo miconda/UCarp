@@ -25,6 +25,7 @@ static void usage(void)
     fputs(_(
         "--interface=<if> (-i <if>): bind interface <if>\n"
         "--srcip=<ip> (-s <ip>): source (real) IP address of that host\n"
+        "--mcast=<ip> (-m <ip>): multicast group IP address (default 224.0.0.18)\n"
         "--vhid=<id> (-v <id>): virtual IP identifier (1-255)\n"
         "--pass=<pass> (-p <pass>): password\n"
         "--passfile=<file> (-o <file>): read password from file\n"
@@ -37,6 +38,7 @@ static void usage(void)
         "--upscript=<file> (-u <file>): run <file> to become a master\n"
         "--downscript=<file> (-d <file>): run <file> to become a backup\n"
         "--deadratio=<ratio> (-r <ratio>): ratio to consider a host as dead\n"
+        "--debug (-D): enable debug output\n"
         "--shutdown (-z): call shutdown script at exit\n"
         "--daemonize (-B): run in background\n"
         "--ignoreifstate (-S): ignore interface state (down, no carrier)\n"
@@ -101,6 +103,7 @@ int main(int argc, char *argv[])
     if (argc <= 1) {
         usage();
     }        
+    inet_pton(AF_INET, DEFAULT_MCASTIP, &mcastip);
     while ((fodder = getopt_long(argc, argv, GETOPT_OPTIONS, long_options,
                                  &option_index)) != -1) {
         switch (fodder) {
@@ -119,9 +122,16 @@ int main(int argc, char *argv[])
                 logfile(LOG_ERR, _("Invalid address: [%s]"), optarg);
                 return 1;
             }
-			if ((srcip_arg = strdup(optarg)) == NULL) {
-				die_mem();
-			}
+            if ((srcip_arg = strdup(optarg)) == NULL) {
+                die_mem();
+            }
+            break;
+        }
+        case 'm': {
+            if (inet_pton(AF_INET, optarg, &mcastip) == 0) {
+                logfile(LOG_ERR, _("Invalid address: [%s]"), optarg);
+                return 1;
+            }
             break;            
         }
         case 'v': {
@@ -193,6 +203,11 @@ int main(int argc, char *argv[])
             }
             break;
         }
+        case 'D': {
+            debug = 1;
+            syslog_level = LOG_DEBUG;
+            break;
+        }
         case 'u': {
             free(upscript);
             if ((upscript = strdup(optarg)) == NULL) {
@@ -253,6 +268,7 @@ int main(int argc, char *argv[])
             }
             if (strcasecmp(optarg, "DEBUG") == 0) {
                 syslog_level = LOG_DEBUG;
+                debug = 1;
                 break;
             }
             logfile(LOG_ERR, _("Unknown log level: [%s]"), optarg);

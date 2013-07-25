@@ -194,9 +194,8 @@ static void carp_send_ad(struct carp_softc *sc)
     int advskew;
     int rc;
 
-#ifdef DEBUG
     logfile(LOG_DEBUG, "-> carp_send_ad()");
-#endif
+
     advbase = sc->sc_advbase;
     if (carp_suppress_preempt == 0 ||
         sc->sc_advskew > CARP_BULK_UPDATE_MIN_DELAY) {
@@ -220,8 +219,7 @@ static void carp_send_ad(struct carp_softc *sc)
     eth_len = ip_len + sizeof eh;
     if ((pkt = ALLOCA(eth_len)) == NULL) {
         logfile(LOG_ERR, _("Out of memory to create packet"));
-        sc->sc_ad_tmo.tv_sec = now.tv_sec + tv.tv_sec;
-        sc->sc_ad_tmo.tv_usec = now.tv_usec + tv.tv_usec;            
+        timeradd(&now, &tv, &sc->sc_ad_tmo);
         return;
     }
     ip.ip_v = IPVERSION;
@@ -239,7 +237,7 @@ static void carp_send_ad(struct carp_softc *sc)
     ip.ip_sum = 0;
     
     memcpy(&ip.ip_src, &srcip, sizeof ip.ip_src);    
-    memcpy(&ip.ip_dst.s_addr, inaddr_carp_group, sizeof ip.ip_dst.s_addr);
+    memcpy(&ip.ip_dst.s_addr, &mcastip, sizeof ip.ip_dst.s_addr);
     
     carp_prepare_ad(&ch, sc);       
     
@@ -262,12 +260,13 @@ static void carp_send_ad(struct carp_softc *sc)
         eh.ether_dhost[4] = 0xff;
         eh.ether_dhost[5] = 0xff;        
     } else {
+        unsigned int m = ntohl(mcastip.s_addr);
         eh.ether_dhost[0] = 0x01;
         eh.ether_dhost[1] = 0x00;
         eh.ether_dhost[2] = 0x5e;
-        eh.ether_dhost[3] = 0x00;
-        eh.ether_dhost[4] = 0x00;
-        eh.ether_dhost[5] = 0x12;        
+        eh.ether_dhost[3] = m >> 16 & 0x7f;
+        eh.ether_dhost[4] = m >>  8 & 0xff;
+        eh.ether_dhost[5] = m       & 0xff;
     }    
     eh.ether_type = htons(ETHERTYPE_IP);    
     
@@ -294,10 +293,8 @@ static void carp_send_ad(struct carp_softc *sc)
             sc->sc_sendad_errors++;
         }
         if (sc->sc_sendad_errors == CARP_SENDAD_MAX_ERRORS) {
-#ifdef DEBUG
             logfile(LOG_ERR, _("write() error #%d/%d"),
                     carp_suppress_preempt, CARP_SENDAD_MAX_ERRORS);
-#endif            
             carp_suppress_preempt++;
             if (carp_suppress_preempt == 1) {
                 carp_send_ad_all(sc);
@@ -315,9 +312,7 @@ static void carp_send_ad(struct carp_softc *sc)
         }
     }
     
-#ifdef DEBUG
     logfile(LOG_DEBUG, _("* advertisement injected *"));
-#endif
     
     ALLOCA_FREE(pkt);
     
@@ -330,8 +325,7 @@ static void carp_send_ad(struct carp_softc *sc)
         sc->sc_delayed_arp = -1;
     }    
     if (advbase != 255 || advskew != 255) {
-        sc->sc_ad_tmo.tv_sec = now.tv_sec + tv.tv_sec;
-        sc->sc_ad_tmo.tv_usec = now.tv_usec + tv.tv_usec;            
+        timeradd(&now, &tv, &sc->sc_ad_tmo);
         /* IPv6 ? */        
     }
 }
@@ -344,9 +338,7 @@ static void carp_setrun(struct carp_softc *sc, sa_family_t af)
 {
     struct timeval tv;    
     
-#ifdef DEBUG
     logfile(LOG_DEBUG, "carp_setrun()");
-#endif
     if (gettimeofday(&now, NULL) != 0) {
         logfile(LOG_WARNING, _("initializing now to gettimeofday() failed: %s"),
                 strerror(errno));
@@ -362,21 +354,17 @@ static void carp_setrun(struct carp_softc *sc, sa_family_t af)
         tv.tv_usec = (unsigned int) (sc->sc_advskew * 1000000ULL / 256ULL);
         switch (af) {        
         case AF_INET:
-            sc->sc_md_tmo.tv_sec = now.tv_sec + tv.tv_sec;
-            sc->sc_md_tmo.tv_usec = now.tv_usec + tv.tv_usec;            
+            timeradd(&now, &tv, &sc->sc_md_tmo);
             break;
 #ifdef INET6
         case AF_INET6:
-            sc->sc_md6_tmo.tv_sec = now.tv_sec + tv.tv_sec;
-            sc->sc_md6_tmo.tv_usec = now.tv_usec + tv.tv_usec;            
+            timeradd(&now, &tv, &sc->sc_md6_tmo);
             break;
 #endif /* INET6 */
         default:
-            sc->sc_md_tmo.tv_sec = now.tv_sec + tv.tv_sec;
-            sc->sc_md_tmo.tv_usec = now.tv_usec + tv.tv_usec;
+            timeradd(&now, &tv, &sc->sc_md_tmo);
 #ifdef INET6
-            sc->sc_md6_tmo.tv_sec = now.tv_sec + tv.tv_sec;
-            sc->sc_md6_tmo.tv_usec = now.tv_usec + tv.tv_usec;
+            timeradd(&now, &tv, &sc->sc_md6_tmo);
 #endif
             break;
         }        
@@ -384,8 +372,7 @@ static void carp_setrun(struct carp_softc *sc, sa_family_t af)
     case MASTER:
         tv.tv_sec = (unsigned int) sc->sc_advbase;
         tv.tv_usec = (unsigned int) (sc->sc_advskew * 1000000ULL / 256ULL);
-        sc->sc_md_tmo.tv_sec = now.tv_sec + tv.tv_sec;
-        sc->sc_md_tmo.tv_usec = now.tv_usec + tv.tv_usec;
+        timeradd(&now, &tv, &sc->sc_md_tmo);
         /* No IPv6 scheduling ? */
         break;
     }
@@ -393,14 +380,10 @@ static void carp_setrun(struct carp_softc *sc, sa_family_t af)
 
 static void carp_master_down(struct carp_softc *sc)
 {
-#ifdef DEBUG
     logfile(LOG_DEBUG, "carp_master_down()");
-#endif
     switch (sc->sc_state) {
     case INIT:
-#ifdef DEBUG
         logfile(LOG_DEBUG, _("master_down event in INIT state"));
-#endif
         break;
     case MASTER:
         break;
@@ -434,7 +417,6 @@ static void packethandler(unsigned char *dummy,
         return;
     }    
     memcpy(&etherhead, sp, sizeof etherhead);
-#ifdef DEBUG
     logfile(LOG_DEBUG, "Ethernet "
              "[%02x:%02x:%02x:%02x:%02x:%02x]->[%02x:%02x:%02x:%02x:%02x:%02x] "
              "type [%04x]",
@@ -451,7 +433,6 @@ static void packethandler(unsigned char *dummy,
             (unsigned int) etherhead.ether_dhost[4],
             (unsigned int) etherhead.ether_dhost[5],
             (unsigned int) ntohs(etherhead.ether_type));
-#endif
     sp += sizeof etherhead;
     caplen = header->caplen - sizeof etherhead;
     memcpy(&iphead, sp, sizeof iphead);    
@@ -469,7 +450,6 @@ static void packethandler(unsigned char *dummy,
         struct timeval sc_tv;
         struct timeval ch_tv;        
 
-#ifdef DEBUG
         logfile(LOG_DEBUG,
                 "\n---------------------------\n\n"
                 "carp [%d.%d.%d.%d] -> [%d.%d.%d.%d]",
@@ -477,14 +457,11 @@ static void packethandler(unsigned char *dummy,
                 source >> 8 & 0xff, source & 0xff,
                 dest >> 24 & 0xff, dest >> 16 & 0xff,
                 dest >> 8 & 0xff, dest & 0xff);
-#endif
         if (caplen < ip_len + sizeof ch) {
-#ifdef DEBUG
             logfile(LOG_DEBUG,
                     "Bogus size: caplen=[%u], ip_len=[%u] ch_len=[%u]",
                     (unsigned int) caplen, (unsigned int) ip_len,
                     (unsigned int) sizeof ch);
-#endif
             return;
         }
         memcpy(&ch, sp + ip_len, sizeof ch);
@@ -514,11 +491,14 @@ static void packethandler(unsigned char *dummy,
             return;
         }
         if (ch.carp_vhid != vhid) {
-#ifdef DEBUG
-            logfile(LOG_NOTICE, _("Ignoring vhid: [%u]"),
+            logfile(LOG_DEBUG, _("Ignoring vhid: [%u]"),
                     (unsigned int) ch.carp_vhid);
-#endif
             return;            
+        }
+        if (iphead.ip_dst.s_addr != mcastip.s_addr) {
+            logfile(LOG_DEBUG, _("Ignoring different multicast ip: [%s]"),
+                    inet_ntoa(iphead.ip_dst));
+            return;
         }
         if (cksum(sp, ip_len + sizeof ch) != 0) {
             logfile(LOG_WARNING, _("Bad IP checksum"));
@@ -575,11 +555,9 @@ static void packethandler(unsigned char *dummy,
         ch_tv.tv_usec = (unsigned int)
             (ch.carp_advskew * 1000000ULL / 256ULL);
         
-#ifdef DEBUG
         logfile(LOG_DEBUG, "sc_tv(local) = [%lu] ch_tv(remote) = [%lu]",
                 (unsigned long) sc_tv.tv_sec,
                 (unsigned long) ch_tv.tv_sec);
-#endif
         
         switch (sc.sc_state) {
         case INIT:
@@ -698,33 +676,18 @@ static void udpu_dispatch(void)
 
 static RETSIGTYPE sighandler_exit(const int sig)
 {
-    (void) sig;
-#ifdef DEBUG
-    logfile(LOG_DEBUG, "sighandler_exit(): Calling [%s] and exiting",
-            downscript);
-#endif
-    if (sc.sc_state != BACKUP) {
-        (void) spawn_handler(dev_desc_fd, downscript);
-    }
-
-	if (pid_file != NULL)
-		unlink(pid_file);
-
-	if (state_file != NULL)
-		unlink(state_file);
-
-    _exit(EXIT_SUCCESS);
+    received_signal=15;
 }
 
 static RETSIGTYPE sighandler_usr(const int sig)
 {
     switch (sig) {
     case SIGUSR1:
-    received_signal=1;
-    break;
+        received_signal=1;
+        break;
     case SIGUSR2:
-    received_signal=2;
-    break;
+        received_signal=2;
+        break;
     }
 }
 
@@ -748,9 +711,7 @@ static char *build_bpf_rule(void)
 
 	snprintf(rule, sizeof rule, "proto %u and src host not %s",
              (unsigned int) IPPROTO_CARP, srcip_s);
-#ifdef DEBUG
     logfile(LOG_DEBUG, "BPF rule: [%s]", rule);
-#endif
     
     return rule;
 }
@@ -845,7 +806,7 @@ int docarp(void)
     }
     if (!no_mcast) {
         memset(&req_add, 0, sizeof req_add);
-        req_add.imr_multiaddr.s_addr = inet_addr("224.0.0.18");
+        req_add.imr_multiaddr.s_addr = mcastip.s_addr;
         req_add.imr_interface.s_addr = srcip.s_addr;
         if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
                        &req_add, sizeof req_add) < 0) {
@@ -921,25 +882,35 @@ int docarp(void)
 #endif
         if (received_signal != 0) {
             int flag = received_signal;
-        
+            
             received_signal = 0;
             switch (flag) {
-        case 1:
-        logfile(LOG_INFO, "%s on %s id %d", 
-            (sc.sc_state == BACKUP ? "BACKUP" : "MASTER"),
-            interface, sc.sc_vhid);
-        break;
-        case 2:
-#ifdef DEBUG
-        logfile(LOG_DEBUG, "Caught signal (USR2) considering going down");
-#endif
-        if (sc.sc_state != BACKUP) {
-            carp_set_state(&sc, BACKUP);
-            sleep(3); /* hold up a sec... */
-            carp_setrun(&sc, 0); /* now listen for 3 heartbeats, as usual */
-            continue;
-        }
-        break;
+            case 1:
+                logfile(LOG_INFO, "%s on %s id %d", 
+                        (sc.sc_state == BACKUP ? "BACKUP" : "MASTER"),
+                        interface, sc.sc_vhid);
+                break;
+            case 2:
+                logfile(LOG_DEBUG, "Caught signal (USR2) considering going down");
+                if (sc.sc_state != BACKUP) {
+                    carp_set_state(&sc, BACKUP);
+                    sleep(3); /* hold up a sec... */
+                    carp_setrun(&sc, 0); /* now listen for 3 heartbeats, as usual */
+                    continue;
+                }
+                break;
+            case 15:
+                logfile(LOG_DEBUG, "sighandler_exit(): Calling [%s] and exiting",
+                        downscript);
+                if (sc.sc_state != BACKUP) {
+                    (void) spawn_handler(dev_desc_fd, downscript);
+                }
+                if (pid_file != NULL)
+                    unlink(pid_file);
+                if (state_file != NULL)
+                    unlink(state_file);
+                _exit(EXIT_SUCCESS);
+                break;                
             }
         }
 
